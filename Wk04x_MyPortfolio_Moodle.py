@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.13"
 # dependencies = [
-#     "marimo>=0.19.10",
+#     "marimo>=0.23.1",
 #     "pandas>=2.3.3",
 #     "plotly>=6.5.1",
 #     "pyarrow>=22.0.0",
@@ -11,7 +11,7 @@
 
 import marimo
 
-__generated_with = "0.19.11"
+__generated_with = "0.23.1"
 app = marimo.App()
 
 
@@ -129,7 +129,7 @@ async def _(micropip):
 @app.cell
 def _(count, filtered_portfolio, mo, pd, px):
     # 4: The Visualizations
-
+    import numpy as np
     # Create the plots based on the filtered data.
 
     #=========================================
@@ -179,46 +179,68 @@ def _(count, filtered_portfolio, mo, pd, px):
 
     # #==============================================
     # # Calculate regression line points
-    # import numpy as np
-    # # use the same dataframe used for the scatter (filtered_portfolio) and plotted y (Debt_Cost_Percent)
-    # #   after filtering out extreme outliers (with Debt_Cost_Percent >= 5, i.e., 500%)
-    # df_regline = filtered_portfolio[
-    #    (filtered_portfolio['Debt_Cost_Percent'] < 5) # Assuming decimal format (0.15 = 15%)
-    #    ]
-    # 
-    # # Only calculate regression if there are data points
-    # if not df_regline.empty:
-    #     x = df_regline['Z_Score_lag'].astype(float)
-    #     y = df_regline['Debt_Cost_Percent'].astype(float)
+    df_regline = filtered_portfolio[
+        (filtered_portfolio['Debt_Cost_Percent'] < 500)  # Keeping this as a safety filter
+    ]
 
-    #     # get slope & intercept of the regression line
-    #     slope, intercept = np.polyfit(x, y, 1)
+    # Only calculate regression if there are data points
+    if not df_regline.empty:
+        x = df_regline['Z_Score_lag'].astype(float)
+        y = df_regline['Debt_Cost_Percent'].astype(float)
 
-    #     # create x-range for a smooth line
-    #     x_line = np.linspace(x.min(), x.max(), 100)
-    #     y_line = intercept + slope * x_line
+        # Get slope & intercept of the regression line
+        slope, intercept = np.polyfit(x, y, 1)
 
-    #     # add regression line to existing fig
-    #     line_trace = px.line(x=x_line, y=y_line#, labels={'x':'Z_Score_lag','y':'Debt_Cost_Percent'}
-    #     ).data[0]
-    #     line_trace.update(line=dict(width=0.5, color='black'))
+        # Create x-range for a smooth line
+        x_line = np.linspace(x.min(), x.max(), 100)
+        y_line = intercept + slope * x_line
 
-    #     fig_portfolio.add_trace(line_trace)
+        # Add regression line to existing fig
+        line_trace = px.line(x=x_line, y=y_line).data[0]
+        line_trace.update(line=dict(width=2, color='black', dash='solid'))
+
+        # Add the regression line to the figure
+        fig_portfolio.add_trace(line_trace)
+
+        # Optional: Add regression equation as annotation
+        fig_portfolio.add_annotation(
+            x=0.95, xref="paper",
+            y=0.95, yref="paper",
+            text=f"Regression Line: y = {slope:.2f}x + {intercept:.2f}",
+            showarrow=False,
+            font=dict(size=12, color="black"),
+            bgcolor="rgba(255,255,255,0.8)",
+            bordercolor="black",
+            borderwidth=1
+        )
     # #==============================================
 
     # Wrap the plot in a marimo UI element
     chart_element = mo.ui.plotly(fig_portfolio)
+    sector_avg = filtered_portfolio.groupby('Sector_Key')['Debt_Cost_Percent'].mean().reset_index()
+    sector_avg.columns = ['Sector', 'Avg Cost Of Debt (%)']
 
+    fig_bar = px.bar(
+        sector_avg,
+        x='Sector',
+        y='Avg Cost Of Debt (%)',
+        color='Sector',
+        title='Average Cost Of Debt By Sector',
+        template='presentation',
+        width=900,
+        height=400
+        )
+    bar_element = mo.ui.plotly(fig_bar)
 
     #=========================================
     # Plot 2: Personal Travel Map (Hardcoded demo data for the 'Hobbies' tab)
     #=========================================
     # This simulates travel history data  
     travel_data = pd.DataFrame({
-        'City': ['London', 'New York', 'Tokyo', 'Sydney', 'Paris'],
-        'Lat': [51.5, 40.7, 35.6, -33.8, 48.8],
-        'Lon': [-0.1, -74.0, 139.6, 151.2, 2.3],
-        'Visit_Year_str': ['2022', '2023', '2024', '2021', '2023']
+        'City': ['London', 'Lagos', 'Madrid', 'Sydney', 'Paris', 'Houston'],
+        'Lat': [51.5, 6.5244, 40.4168, -33.8, 48.8,29.7064],
+        'Lon': [-0.1, 3.3792, -3.7038 , 151.2, 2.3,-95.3698],
+        'Visit_Year_str': ['2022', '2023', '2024', '2021', '2023', '2018']
     })
 
     years = sorted(travel_data['Visit_Year_str'].unique(), key=int)  # -> ['2021','2022','2023','2024']
@@ -237,11 +259,11 @@ def _(count, filtered_portfolio, mo, pd, px):
     )
 
     fig_travel.update_traces(marker=dict(size=12)); # use trailing semicolon to suppress output
-    return chart_element, fig_travel
+    return bar_element, chart_element, fig_travel
 
 
 @app.cell
-def _(cap_slider, chart_element, fig_travel, mo, sector_dropdown):
+def _(bar_element, cap_slider, chart_element, fig_travel, mo, sector_dropdown):
     # 5: The "Portfolio" Layout (a Multi-Tab Webpage)
 
     # Combine everything into a polished, tabbed interface using Markdown and mo.ui.tabs.
@@ -252,20 +274,49 @@ def _(cap_slider, chart_element, fig_travel, mo, sector_dropdown):
     # Using standard Markdown for formatting
     tab_cv = mo.md(
         """
-        ### Aspiring Financial Analyst | Data Science Enthusiast
+        ### Aspiring Financial Analyst | Chartered Accountant
 
         **Summary:**
         - Passionate about uncovering market insights using modern data tools like Python, Marimo, and Plotly. 
+        - Working towards a career in financial analysis and chartered accountancy, combining analytical foundations with real- world banking experience.
         - Eager to apply analytical skills to real-world financial challenges.
 
         **Education:**
-        *   **BSc Accounting & Finance**, Bayes Business School (2025 - Present)
-        *   *Relevant Modules:* Introduction to Data Science and AI Tools, Financial Accounting.
+        *   *BSc Accounting & Finance*, Bayes Business School (2025 - Present)
+        *   Relevant Modules: Introduction to Data Science and AI Tools, Financial Institutions, principles of Economics, Principles of Taxation.
+
+            *City St George's, university of London international study centre* (sep 2024 - jun 2025) 
+             Foundation in Business and Economics with accounting - Grade: 1:1
+
+             *Windermere school* (2022 - 2024)
+             International Baccalaureate (ib) - Grade: 40 points 
+
+               *Work Experience:*
+        *   *Finance Operations Intern*, Heritage Bank PLC, Nigeria (Aug 2023)
+            - Utilised internal banking systems to review how financial data is recorded,
+              analysed and used to support customer outcomes.
+            - Observed relationship managers and customer service advisors to understand
+              daily banking operations and client management processes.
+            - Assisted in preparing basic summaries of financial activity, contributing
+              to the analysis of transaction trends and operational performance.
+            - Managed and organised financial information across departments, demonstrating
+              strong attention to detail and organisational skills.
+
+               *Extracurricular Activities:*
+        *   *Student & Marketing Ambassador*, City University of London (Sep 2024 – Jun 2025)
+            - Collaborated with peers to develop promotional strategies and content.
+            - Organised and coordinated events, demonstrating strong planning and time management.
+            - Collected and analysed student feedback to identify trends and improve student experience.
+            - Delivered presentations and campus tours to diverse audiences.
 
         **Skills:**
         *   🐍 Python Programming
         *   📊 Data Visualization
         *   📉 Financial Modeling
+        *       Microsoft Excel, Word, Powerpoint
+        *       Analytical Thinking and problem solving 
+        * Presentation and Communcation skills
+
         """
         )
 
@@ -278,7 +329,8 @@ def _(cap_slider, chart_element, fig_travel, mo, sector_dropdown):
         mo.callout(mo.md("Use the filters below to explore the relationship between Borrowing Costs and Credit Risk."), kind="info"),
         # horizontally arrange two UI elements (sector_dropdown and cap_slider) in a row.
         mo.hstack([sector_dropdown, cap_slider], justify="center", gap=2),
-        chart_element
+        chart_element,
+        bar_element
         ])
 
 
@@ -286,7 +338,7 @@ def _(cap_slider, chart_element, fig_travel, mo, sector_dropdown):
     # Combining text and the travel map
     tab_personal = mo.vstack([
         mo.md("## 🌍 My Hobbies: Travel & Photography"),
-        mo.md("When I'm not analyzing company financials, I love exploring the world."),
+        mo.md("When I'm not analyzing company financials, I love exploring the world and experiencing different cultures. Having Grown up Between Nigeria and the UK, Travel has alwyas been a core part of who i am."),
         mo.ui.plotly(fig_travel)
         ])
     return tab_cv, tab_data_content, tab_personal
@@ -306,7 +358,7 @@ def _(mo, tab_cv, tab_data_content, tab_personal):
     # Display the final app
     mo.md(
         f"""
-        # **Jane Doe** 
+        # **Brandon Okehs** 
         ---
         {app_tabs}
         """)
